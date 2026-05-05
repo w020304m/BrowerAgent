@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+.wxt/
+dist/
+
+# Environment
+.env
+.env.*
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files and infrastructure
+**/__tests__/
+**/__mocks__/
+src/test/
+*.test.ts
+*.test.tsx
+vitest.config.ts
+
+# Debug / temp output files
+*.log
+test_output*
+test_result*
+test-output*
+test_robustness*
+ctx-test-*
+tsc-output*
+compile_output*
+agent-loop-test*
+nul
+ISSUES.md
+scripts/
+
+# Claude Code (personal dev tool, not project)
+.claude/
+CLAUDE.md
+
+# Project docs (private)
+docs/
+
+# Analysis / scratch docs
+WEBAGENT_*.md

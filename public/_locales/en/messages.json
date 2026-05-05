@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "WM"
+  },
+  "extDescription": {
+    "message": "BrowserAgent — AI chat & web automation via browser sidepanel."
+  },
+  "openSidePanelToChat": {
+    "message": "Open Sidepanel to Chat"
+  },
+  "openOptionToChat": {
+    "message": "Open Options Page"
+  },
+  "contextSummarize": {
+    "message": "Summarize with BrowserAgent"
+  },
+  "contextExplain": {
+    "message": "Explain with BrowserAgent"
+  },
+  "contextRephrase": {
+    "message": "Rephrase with BrowserAgent"
+  },
+  "contextTranslate": {
+    "message": "Translate with BrowserAgent"
+  },
+  "contextCustom": {
+    "message": "Custom Prompt with BrowserAgent"
+  }
+}

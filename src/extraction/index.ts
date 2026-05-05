@@ -1,0 +1,5 @@
+export { ContentExtractorRegistry } from './types'
+export type { IContentExtractor, ContentSource, ExtractionResult } from './types'
+export { TabContentExtractor } from './tab-content-extractor'
+export { FileExtractor } from './file-extractor'
+export { TextExtractor } from './text-extractor'

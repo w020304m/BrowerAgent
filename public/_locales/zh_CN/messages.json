@@ -1,0 +1,29 @@
+{
+  "extName": {
+    "message": "WM"
+  },
+  "extDescription": {
+    "message": "BrowserAgent — 通过浏览器侧边栏进行 AI 对话与网页自动化。"
+  },
+  "openSidePanelToChat": {
+    "message": "打开侧边栏聊天"
+  },
+  "openOptionToChat": {
+    "message": "打开选项页面"
+  },
+  "contextSummarize": {
+    "message": "使用 BrowserAgent 摘要"
+  },
+  "contextExplain": {
+    "message": "使用 BrowserAgent 解释"
+  },
+  "contextRephrase": {
+    "message": "使用 BrowserAgent 改写"
+  },
+  "contextTranslate": {
+    "message": "使用 BrowserAgent 翻译"
+  },
+  "contextCustom": {
+    "message": "使用 BrowserAgent 自定义提示词"
+  }
+}
