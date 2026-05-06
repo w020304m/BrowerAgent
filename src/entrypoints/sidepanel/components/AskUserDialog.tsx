@@ -57,7 +57,7 @@ export function AskUserDialog() {
 
   return (
     <AlertDialog open={!!pendingAskUser} onOpenChange={(open) => { if (!open) handleDismiss() }}>
-      <AlertDialogContent className="max-w-md">
+      <AlertDialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <svg className="w-4 h-4 text-purple-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -67,51 +67,53 @@ export function AskUserDialog() {
             </svg>
             {t('agentAskTitle')}
           </AlertDialogTitle>
-          <AlertDialogDescription className="text-sm whitespace-pre-wrap">
+          <AlertDialogDescription className="text-sm whitespace-pre-wrap break-words">
             {pendingAskUser?.question}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {hasOptions ? (
-          <div className="flex flex-wrap gap-2">
-            {pendingAskUser!.options!.map((option, i) => (
-              <button
-                key={i}
-                type="button"
-                className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
-                onClick={() => handleOptionClick(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        ) : (
+        <div className="flex flex-col gap-3 my-4">
+          {hasOptions && (
+            <div className="flex flex-col gap-2">
+              {pendingAskUser!.options!.map((option, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="w-full text-left px-3 py-2 rounded-md bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm transition-colors break-words hyphens-auto text-wrap overflow-hidden"
+                  onClick={() => handleOptionClick(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <Input
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleTextSubmit() }}
-              placeholder={t('agentAskPlaceholder')}
+              placeholder={hasOptions ? t('agentAskCustomInput') : t('agentAskPlaceholder')}
               className="flex-1"
-              autoFocus
+              autoFocus={!hasOptions}
             />
             <button
               type="button"
-              className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
+              className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors whitespace-nowrap"
               onClick={handleTextSubmit}
               disabled={!textInput.trim()}
             >
               {t('agentAskSend')}
             </button>
           </div>
-        )}
+        </div>
 
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={handleDismiss}>
+        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          <AlertDialogCancel onClick={handleDismiss} className="w-full sm:w-auto">
             {t('agentAskDismiss')}
           </AlertDialogCancel>
           {hasOptions && (
-            <AlertDialogAction onClick={() => sendResponse('')}>
+            <AlertDialogAction onClick={() => sendResponse('')} className="w-full sm:w-auto">
               {t('agentAskSkip')}
             </AlertDialogAction>
           )}

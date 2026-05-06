@@ -6,13 +6,13 @@ import type { ToolCall, ToolResult } from '@/types/tool'
 
 /** Configuration for ContextManager behavior */
 export interface ContextConfig {
-  /** Keep this many recent steps uncompressed (default 3) */
+  /** Keep this many recent steps uncompressed (default 5, increased from 3) */
   keepRecentSteps: number
   /** Max tokens for DOM snapshot (default 4000) */
   maxSnapshotTokens: number
   /** Model context window tokens — default 128000, used for budget checking */
   contextWindowTokens: number
-  /** Compression trigger: fraction of context window used before compressing (default 0.7 = 70%) */
+  /** Compression trigger: fraction of context window used before compressing (default 0.85 = 85%, increased from 70%) */
   compressThreshold: number
 }
 
@@ -46,10 +46,10 @@ export interface AgentStep {
 
 /** Default configuration values */
 export const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
-  keepRecentSteps: 3,
+  keepRecentSteps: 5,
   maxSnapshotTokens: 4000,
   contextWindowTokens: 128_000,
-  compressThreshold: 0.7,
+  compressThreshold: 0.85,
 }
 
 /** Dynamic threshold calculations based on context window size */

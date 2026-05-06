@@ -12,6 +12,7 @@ type ToolHandler = (toolCall: ToolCall) => Promise<ToolResult>
 export class BridgeService {
   private handlers = new Map<string, ToolHandler>()
   private pendingAskUserResolvers = new Map<string, (answer: string) => void>()
+  private pendingSelectElementResolvers = new Map<string, (result: { agentId: string; tag: string; text?: string } | null) => void>()
 
   /** Register a handler for a specific tool name */
   register(toolName: string, handler: ToolHandler): void {
@@ -32,6 +33,20 @@ export class BridgeService {
     this.pendingAskUserResolvers.set(toolCallId, resolver)
   }
 
+  /** Resolve a pending select_element promise (called when content script sends selection) */
+  resolveSelectElement(toolCallId: string, result: { agentId: string; tag: string; text?: string } | null): void {
+    const resolver = this.pendingSelectElementResolvers.get(toolCallId)
+    if (resolver) {
+      resolver(result)
+      this.pendingSelectElementResolvers.delete(toolCallId)
+    }
+  }
+
+  /** Register a pending select_element promise */
+  registerSelectElementPending(toolCallId: string, resolver: (result: { agentId: string; tag: string; text?: string } | null) => void): void {
+    this.pendingSelectElementResolvers.set(toolCallId, resolver)
+  }
+
   /** Handle incoming message from sidepanel */
   async handleMessage(message: unknown): Promise<AgentToolResponse | undefined> {
     if (!message || typeof message !== 'object') return undefined
@@ -47,6 +62,13 @@ export class BridgeService {
     if (msg.type === 'agent_ask_user_response') {
       const { toolCallId, answer } = msg as { type: string; toolCallId: string; answer: string }
       this.resolveAskUser(toolCallId, answer)
+      return undefined
+    }
+
+    // Handle agent_select_element_response (from content script)
+    if (msg.type === 'agent_select_element_response') {
+      const { toolCallId, result } = msg as { type: string; toolCallId: string; result: { agentId: string; tag: string; text?: string } | null }
+      this.resolveSelectElement(toolCallId, result)
       return undefined
     }
 

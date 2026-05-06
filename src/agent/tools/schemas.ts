@@ -64,14 +64,14 @@ const perceptionTools: ToolDefinition[] = [
   },
   {
     name: 'agent__read_page',
-    description: 'Read page text content. Snapshot shows elements; this shows paragraphs/articles.',
+    description: 'Read page text content. Snapshot shows elements; this shows paragraphs/articles. Use scope="element" with agentId to read specific element and reduce context.',
     parameters: {
       type: 'object',
       properties: {
         scope: {
           type: 'string',
           enum: ['viewport', 'element', 'page'],
-          description: 'viewport, element, or page. Default: viewport.',
+          description: 'viewport, element, or page. Default: viewport. Use element to read specific div/section.',
         },
         target: {
           type: 'object',
@@ -79,11 +79,23 @@ const perceptionTools: ToolDefinition[] = [
             agentId: { type: 'string', description: 'Element agentId. Required for element scope.' },
             selector: { type: 'string', description: 'CSS selector fallback.' },
           },
-          description: 'Target element. Required when scope="element".',
+          description: 'Target element. Required when scope="element". Use this to avoid reading entire page.',
         },
-        maxChars: { type: 'number', description: 'Max chars. Default 8000, range 500-30000.' },
+        maxChars: { type: 'number', description: 'Max chars. Default 8000, range 500-30000. Use 2000-4000 for single element.' },
         tabId: tabIdParam,
       },
+    },
+  },
+  {
+    name: 'agent__select_element',
+    description: 'Enter element selection mode. User can click an element to get its agentId. Use for precise targeting when snapshot has many elements.',
+    parameters: {
+      type: 'object',
+      properties: {
+        instruction: { type: 'string', description: 'Tell user what to click (e.g. "Click the product card you want to analyze").' },
+        tabId: tabIdParam,
+      },
+      required: ['instruction'],
     },
   },
 ]

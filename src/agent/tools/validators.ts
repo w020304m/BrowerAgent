@@ -1,5 +1,5 @@
 /**
- * Zod runtime validators for all 35 agent tools.
+ * Zod runtime validators for all 36 agent tools.
  *
  * These validate the parameters the LLM actually sends back in tool_call.args,
  * catching malformed or missing fields before tool execution.
@@ -114,6 +114,11 @@ const ReadPageParamsSchema = z.preprocess(
   },
   { message: 'element mode requires target (agentId or selector)', path: ['target'] },
 ))
+
+const SelectElementParamsSchema = z.object({
+  instruction: z.string().min(1, 'instruction is required'),
+  tabId: TabIdSchema,
+})
 
 // ── Action (6) ──
 
@@ -314,6 +319,7 @@ const TOOL_VALIDATORS: Record<string, z.ZodSchema> = {
   agent__get_element_by_description: GetElementByDescriptionParamsSchema,
   agent__get_page_screenshot: GetPageScreenshotParamsSchema,
   agent__read_page: ReadPageParamsSchema,
+  agent__select_element: SelectElementParamsSchema,
 
   // Action
   agent__click: ClickParamsSchema,
@@ -359,6 +365,7 @@ const FORMAT_EXAMPLES: Record<string, string> = {
   'agent__page_info': '{"info_type": "snapshot"}',
   'agent__read_page': '{"scope": "viewport"}',
   'agent__get_element_by_description': '{"description": "search input"}',
+  'agent__select_element': '{"instruction": "Click the product card you want to analyze"}',
   'agent__open_tab': '{"url": "https://example.com"}',
   'agent__switch_tab': '{"tabId": 1}',
   'agent__close_tab': '{}',

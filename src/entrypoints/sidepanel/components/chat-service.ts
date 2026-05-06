@@ -551,6 +551,16 @@ export function useChatService() {
 
     if (!text.trim()) return
 
+    // Append selected element reference to message content if present
+    let finalContent = text
+    if (state.selectedElementRef) {
+      const el = state.selectedElementRef
+      const elementRef = `\n\n[Refers to element: ${el.agentId} <${el.tag}>${el.text ? ` "${el.text}"` : ''}]`
+      finalContent = text + elementRef
+      // Clear the selected element after using it
+      store.getState().setSelectedElementRef(null)
+    }
+
     // If streaming, handle agent context injection or normal block
     if (state.isStreaming) {
       if (state.agentEnabled && state.pendingAskUser) {
@@ -592,11 +602,26 @@ export function useChatService() {
       id: generateId(),
       historyId,
       role: 'user',
-      content: text,
+      content: finalContent,
       images: images && images.length > 0 ? images : undefined,
       createdAt: Date.now(),
     }
     store.getState().addMessage(userMessage)
+
+    const isTemporary = state.isTemporary
+
+    // Debug logging
+    console.log('[chat-service] Saving user message:', { historyId, content: finalContent, isTemporary })
+
+    // Persist user message immediately, so it's saved even if agent gets cancelled
+    if (!isTemporary) {
+      try {
+        await messageRepo.add(chatMessageToDbRow(userMessage))
+        console.log('[chat-service] User message saved to DB')
+      } catch (err) {
+        console.error('[chat-service] Failed to save user message:', err)
+      }
+    }
 
     // Set up abort controller with 5-minute timeout
     const abortController = new AbortController()
@@ -605,8 +630,6 @@ export function useChatService() {
 
     // Start streaming
     store.getState().startStreaming()
-
-    const isTemporary = state.isTemporary
 
     try {
       // Branch: agent mode vs normal mode

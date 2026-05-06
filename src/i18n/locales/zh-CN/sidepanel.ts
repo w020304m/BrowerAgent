@@ -77,6 +77,7 @@ const sidepanel = {
   // Agent ask_user dialog
   agentAskTitle: 'Agent 提问：',
   agentAskPlaceholder: '输入你的回答...',
+  agentAskCustomInput: '或输入自定义答案...',
   agentAskSend: '发送',
   agentAskDismiss: '忽略',
   agentAskSkip: '跳过',

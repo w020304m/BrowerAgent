@@ -3,24 +3,25 @@
  */
 
 export { AGENT_TOOLS, AGENT_GROUPS, TOOL_GROUP_MAP } from './schemas'
-export { registerPerceptionHandlers } from './perception'
+export { registerPerceptionHandlers, setBridgeService as setPerceptionBridgeService } from './perception'
 export { registerActionHandlers } from './action'
 export { registerNavigationHandlers } from './navigation'
 export { registerMemoryHandlers } from './memory'
-export { registerReasoningHandlers, setBridgeService } from './reasoning'
+export { registerReasoningHandlers, setBridgeService as setReasoningBridgeService } from './reasoning'
 export { registerSearchHandlers } from './search'
 
 import type { BridgeService } from '../bridge/bridge-service'
-import { registerPerceptionHandlers } from './perception'
+import { registerPerceptionHandlers, setBridgeService as setPerceptionBridgeService } from './perception'
 import { registerActionHandlers } from './action'
 import { registerNavigationHandlers } from './navigation'
 import { registerMemoryHandlers } from './memory'
-import { registerReasoningHandlers, setBridgeService } from './reasoning'
+import { registerReasoningHandlers, setBridgeService as setReasoningBridgeService } from './reasoning'
 import { registerSearchHandlers } from './search'
 
 /** Register all agent tool handlers on the bridge */
 export function registerAllAgentTools(bridge: BridgeService): void {
-  setBridgeService(bridge)
+  setReasoningBridgeService(bridge)
+  setPerceptionBridgeService(bridge)
   registerPerceptionHandlers(bridge)
   registerActionHandlers(bridge)
   registerNavigationHandlers(bridge)

@@ -60,6 +60,10 @@ export interface ChatState {
   agentActionInfo: AgentActionInfo | null
   /** Pending ask_user request from agent */
   pendingAskUser: { toolCallId: string; question: string; options?: string[] } | null
+  /** Pending select_element request from agent */
+  pendingSelectElement: { toolCallId: string; instruction: string } | null
+  /** User-selected element reference (for attaching to messages) */
+  selectedElementRef: { agentId: string; tag: string; text?: string } | null
   /** Summary of last agent run for task continuation */
   lastAgentSummary: AgentRunSummary | null
   /** Current agent task plan for UI display */
@@ -169,6 +173,8 @@ const initialState = {
   agentIteration: 0,
   agentActionInfo: null as AgentActionInfo | null,
   pendingAskUser: null as { toolCallId: string; question: string; options?: string[] } | null,
+  pendingSelectElement: null as { toolCallId: string; instruction: string } | null,
+  selectedElementRef: null as { agentId: string; tag: string; text?: string } | null,
   lastAgentSummary: null as AgentRunSummary | null,
   agentPlan: null as AgentPlan | null,
   messageQueue: [] as QueueItem[],
@@ -245,6 +251,8 @@ export const useChatStore = create<ChatState>((set) => ({
       agentIteration: 0,
       agentActionInfo: null,
       pendingAskUser: null,
+      pendingSelectElement: null,
+      selectedElementRef: null,
       lastAgentSummary: null,
       agentPlan: null,
       messageQueue: [],
@@ -419,6 +427,10 @@ export const useChatStore = create<ChatState>((set) => ({
   setAgentActionInfo: (info) => set({ agentActionInfo: info }),
 
   setPendingAskUser: (pending) => set({ pendingAskUser: pending }),
+
+  setPendingSelectElement: (pending) => set({ pendingSelectElement: pending }),
+
+  setSelectedElementRef: (element) => set({ selectedElementRef: element }),
 
   setLastAgentSummary: (summary) => set({ lastAgentSummary: summary }),
 

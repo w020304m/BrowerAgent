@@ -125,6 +125,19 @@ export default defineBackground(() => {
   // Attach the router
   router.attach()
 
+  // Forward user_element_selected messages from content scripts to sidepanel
+  chrome.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
+    if (message && typeof message === 'object' && message.type === 'user_element_selected') {
+      // Forward to all extension pages (sidepanel will pick it up)
+      chrome.runtime.sendMessage({
+        type: 'user_element_selected',
+        result: message.result,
+      }).catch(() => {
+        // Sidepanel may not be listening
+      })
+    }
+  })
+
   // Initialize BridgeService for agent tools
   const bridge = new BridgeService()
   registerAllAgentTools(bridge)

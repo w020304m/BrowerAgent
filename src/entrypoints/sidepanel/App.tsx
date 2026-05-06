@@ -8,6 +8,7 @@ import { ChatInput } from './components/ChatInput'
 import { HistorySidebar } from './components/HistorySidebar'
 import { ModeSelector } from './components/ModeSelector'
 import { AskUserDialog } from './components/AskUserDialog'
+import { SelectElementDialog } from './components/SelectElementDialog'
 import { AgentPlanCard } from './components/AgentPlanCard'
 import { PromptSelector } from './components/PromptSelector'
 import { useCopilotBroadcast } from './hooks/use-copilot'
@@ -24,6 +25,7 @@ export default function SidepanelApp() {
   const error = useChatStore(s => s.error)
   const setError = useChatStore(s => s.setError)
   const setPendingAskUser = useChatStore(s => s.setPendingAskUser)
+  const setPendingSelectElement = useChatStore(s => s.setPendingSelectElement)
   const setAgentPlan = useChatStore(s => s.setAgentPlan)
   const agentEnabled = useChatStore(s => s.agentEnabled)
   const { t } = useTranslation('sidepanel')
@@ -57,7 +59,7 @@ export default function SidepanelApp() {
     themeStorage.set(next)
   }, [themeMode])
 
-  // Listen for agent_ask_user and agent_plan_update messages from background
+  // Listen for agent_ask_user, agent_select_element, and agent_plan_update messages from background
   useEffect(() => {
     const listener = (message: unknown) => {
       if (!message || typeof message !== 'object') return
@@ -69,13 +71,22 @@ export default function SidepanelApp() {
           options: msg.options as string[] | undefined,
         })
       }
+      if (msg.type === 'agent_select_element') {
+        setPendingSelectElement({
+          toolCallId: msg.toolCallId as string,
+          instruction: msg.instruction as string,
+        })
+      }
+      if (msg.type === 'agent_select_element_complete') {
+        setPendingSelectElement(null)
+      }
       if (msg.type === 'agent_plan_update' && msg.plan) {
         setAgentPlan(msg.plan as import('@/types/agent-plan').AgentPlan)
       }
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [setPendingAskUser, setAgentPlan])
+  }, [setPendingAskUser, setPendingSelectElement, setAgentPlan])
 
   const isOllamaOriginError = error === 'LOCAL_ORIGIN_FORBIDDEN'
 
@@ -283,6 +294,9 @@ export default function SidepanelApp() {
 
       {/* Agent ask_user dialog */}
       <AskUserDialog />
+
+      {/* Agent select_element dialog */}
+      <SelectElementDialog />
     </div>
     </TooltipProvider>
   )

@@ -77,6 +77,7 @@ const sidepanel = {
   // Agent ask_user dialog
   agentAskTitle: 'Agent asks:',
   agentAskPlaceholder: 'Type your answer...',
+  agentAskCustomInput: 'Or type a custom answer...',
   agentAskSend: 'Send',
   agentAskDismiss: 'Dismiss',
   agentAskSkip: 'Skip',

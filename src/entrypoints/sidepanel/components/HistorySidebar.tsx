@@ -123,8 +123,18 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const handleSelect = useCallback(async (history: HistoryInfo) => {
     if (historyId === history.id) return
 
+    // First, clear the compressed history summary to prevent cross-contamination
+    setCompressedHistorySummary(null)
+
+    // Then set the new history ID and load messages
     setHistoryId(history.id)
     const msgs = await messageRepo.getByHistoryId(history.id)
+
+    // Debug logging
+    console.log('[HistorySidebar] Loading history:', history.id)
+    console.log('[HistorySidebar] Messages loaded:', msgs.length)
+    console.log('[HistorySidebar] Messages:', msgs)
+
     setMessages(msgs as unknown as ChatMessage[])
 
     // Restore session preferences (model, mode, agent).
@@ -151,7 +161,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
       const summary = await agentSummaryStorage.get(history.id)
       setLastAgentSummary(summary ?? null)
 
-      // Restore compressed conversation summary
+      // Restore compressed conversation summary AFTER messages are loaded
       const compressed = await compressedHistoryStorage.get(history.id)
       setCompressedHistorySummary(compressed ?? null)
     } catch {
@@ -159,12 +169,15 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     }
 
     onClose()
-  }, [historyId, setHistoryId, setMessages, setModel, setMode, setAgentEnabled, setLastAgentSummary, setCompressedHistorySummary, onClose])
+  }, [historyId, setHistoryId, setMessages, setModel, setMode, setAgentEnabled, setLastAgentSummary, setCompressedHistorySummary, setSelectedPromptId, setTemporary, onClose])
 
   // New chat
   const handleNewChat = useCallback(() => {
+    // Clear compressed history summary when starting a new chat
+    setCompressedHistorySummary(null)
+    setLastAgentSummary(null)
     newChat()
-  }, [newChat])
+  }, [newChat, setCompressedHistorySummary, setLastAgentSummary])
 
   // Delete — remove history, messages, and session preferences
   const handleDelete = useCallback(async (id: string) => {
