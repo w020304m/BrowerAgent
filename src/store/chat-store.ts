@@ -60,10 +60,10 @@ export interface ChatState {
   agentActionInfo: AgentActionInfo | null
   /** Pending ask_user request from agent */
   pendingAskUser: { toolCallId: string; question: string; options?: string[] } | null
-  /** Pending select_element request from agent */
-  pendingSelectElement: { toolCallId: string; instruction: string } | null
-  /** User-selected element reference (for attaching to messages) */
-  selectedElementRef: { agentId: string; tag: string; text?: string } | null
+  /** Selected elements for multi-element reference (marker-based) */
+  selectedElements: Array<{ id: string; agentId: string; tag: string; text?: string }>
+  /** Counter incremented by keyboard shortcut to trigger element selection */
+  selectElementTrigger: number
   /** Summary of last agent run for task continuation */
   lastAgentSummary: AgentRunSummary | null
   /** Current agent task plan for UI display */
@@ -128,6 +128,14 @@ export interface ChatState {
   setAgentActionInfo: (info: AgentActionInfo | null) => void
   /** Set pending ask_user request */
   setPendingAskUser: (pending: { toolCallId: string; question: string; options?: string[] } | null) => void
+  /** Add a selected element */
+  addSelectedElement: (el: { agentId: string; tag: string; text?: string }) => void
+  /** Remove a selected element by id */
+  removeSelectedElement: (id: string) => void
+  /** Clear all selected elements */
+  clearSelectedElements: () => void
+  /** Trigger element selection via keyboard shortcut */
+  triggerSelectElement: () => void
   /** Set last agent run summary for task continuation */
   setLastAgentSummary: (summary: AgentRunSummary | null) => void
   /** Set agent task plan for UI display */
@@ -173,8 +181,8 @@ const initialState = {
   agentIteration: 0,
   agentActionInfo: null as AgentActionInfo | null,
   pendingAskUser: null as { toolCallId: string; question: string; options?: string[] } | null,
-  pendingSelectElement: null as { toolCallId: string; instruction: string } | null,
-  selectedElementRef: null as { agentId: string; tag: string; text?: string } | null,
+  selectedElements: [] as Array<{ id: string; agentId: string; tag: string; text?: string }>,
+  selectElementTrigger: 0,
   lastAgentSummary: null as AgentRunSummary | null,
   agentPlan: null as AgentPlan | null,
   messageQueue: [] as QueueItem[],
@@ -251,8 +259,7 @@ export const useChatStore = create<ChatState>((set) => ({
       agentIteration: 0,
       agentActionInfo: null,
       pendingAskUser: null,
-      pendingSelectElement: null,
-      selectedElementRef: null,
+      selectedElements: [],
       lastAgentSummary: null,
       agentPlan: null,
       messageQueue: [],
@@ -428,9 +435,15 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setPendingAskUser: (pending) => set({ pendingAskUser: pending }),
 
-  setPendingSelectElement: (pending) => set({ pendingSelectElement: pending }),
+  addSelectedElement: (el) => set((s) => ({
+    selectedElements: [...s.selectedElements, { ...el, id: crypto.randomUUID() }],
+  })),
+  removeSelectedElement: (id) => set((s) => ({
+    selectedElements: s.selectedElements.filter(e => e.id !== id),
+  })),
+  clearSelectedElements: () => set({ selectedElements: [] }),
 
-  setSelectedElementRef: (element) => set({ selectedElementRef: element }),
+  triggerSelectElement: () => set((s) => ({ selectElementTrigger: s.selectElementTrigger + 1 })),
 
   setLastAgentSummary: (summary) => set({ lastAgentSummary: summary }),
 

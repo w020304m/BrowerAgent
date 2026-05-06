@@ -33,6 +33,7 @@ import type { AgentRunSummary } from '@/agent/types'
 import { toolSettings } from '@/storage/tool-settings'
 import { agentSettings } from '@/storage/agent-settings'
 import { sessionPreferencesStorage, compressedHistoryStorage } from '@/storage/session-preferences'
+import { ELEMENT_MARKER_REGEX, ELEMENT_REF_REGEX } from '@/entrypoints/sidepanel/components/ChatInput'
 
 // ── Active agent executor reference ──
 // Stored at module level so the UI can trigger compact() on the running agent.
@@ -551,14 +552,53 @@ export function useChatService() {
 
     if (!text.trim()) return
 
-    // Append selected element reference to message content if present
+    // Resolve element markers to full references
     let finalContent = text
-    if (state.selectedElementRef) {
-      const el = state.selectedElementRef
-      const elementRef = `\n\n[Refers to element: ${el.agentId} <${el.tag}>${el.text ? ` "${el.text}"` : ''}]`
-      finalContent = text + elementRef
-      // Clear the selected element after using it
-      store.getState().setSelectedElementRef(null)
+    if (state.selectedElements.length > 0) {
+      const elements = state.selectedElements
+      const elementMap = new Map(elements.map((el, idx) => [el.agentId, { el, index: idx }]))
+
+      // 1. Replace zero-width markers (appended by handleSubmit) with full references
+      finalContent = finalContent.replace(ELEMENT_MARKER_REGEX, (_match, agentId: string) => {
+        const entry = elementMap.get(agentId)
+        if (!entry) return ''
+        const { el } = entry
+        return `[element: ${agentId} <${el.tag}>${el.text ? ` "${el.text}"` : ''}]`
+      })
+
+      // 2. Replace @#N visible references (inserted by clicking tags) with full references
+      const referencedAgentIds = new Set<string>()
+      finalContent = finalContent.replace(ELEMENT_REF_REGEX, (_match, numStr: string) => {
+        const num = parseInt(numStr, 10)
+        if (num < 1 || num > elements.length) return _match
+        const el = elements[num - 1]!
+        referencedAgentIds.add(el.agentId)
+        return `[element: ${el.agentId} <${el.tag}>${el.text ? ` "${el.text}"` : ''}]`
+      })
+
+      // Also track zero-width marker references
+      let markerMatch: RegExpExecArray | null
+      const markerRegex = new RegExp(ELEMENT_MARKER_REGEX.source, 'g')
+      while ((markerMatch = markerRegex.exec(text)) !== null) {
+        referencedAgentIds.add(markerMatch[1])
+      }
+      // Re-scan for @#N in original text too
+      const refRegex = new RegExp(ELEMENT_REF_REGEX.source, 'g')
+      while ((markerMatch = refRegex.exec(text)) !== null) {
+        const num = parseInt(markerMatch[1], 10)
+        if (num >= 1 && num <= elements.length) {
+          referencedAgentIds.add(elements[num - 1]!.agentId)
+        }
+      }
+
+      // 3. Append unreferenced elements at the end
+      const unreferenced = elements.filter(el => !referencedAgentIds.has(el.agentId))
+      if (unreferenced.length > 0) {
+        finalContent += unreferenced
+          .map(el => `\n[Refers to element: ${el.agentId} <${el.tag}>${el.text ? ` "${el.text}"` : ''}]`)
+          .join('')
+      }
+      store.getState().clearSelectedElements()
     }
 
     // If streaming, handle agent context injection or normal block

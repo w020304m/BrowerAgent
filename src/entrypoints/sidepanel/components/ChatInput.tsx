@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/store/chat-store'
 import { useChatService, compactAgent, isAgentRunning, compressHistory } from './chat-service'
+import { selectElementViaPort } from '@/ipc/client'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import type { QueueItem } from '@/types/chat'
 import type { ChatMessage } from '@/types/message'
 import { syncStorageService } from '@/storage/index'
@@ -13,6 +13,23 @@ import { ollamaSettings } from '@/storage/ollama-settings'
 import { openaiConfigRepo } from '@/db/repositories/openai-config.repository'
 import { createChatProvider } from '@/providers/factory'
 import type { ProviderType } from '@/types/provider'
+import { ChipInput, type ChipInputHandle } from './ChipInput'
+
+/**
+ * Build the marker string for an element reference.
+ * Uses zero-width characters to be invisible but parseable.
+ */
+export function elementMarker(agentId: string): string {
+  return `\u200B\u200B[${agentId}]\u200B\u200B`
+}
+
+/** Regex to find all element markers in text */
+export const ELEMENT_MARKER_REGEX = /\u200B\u200B\[(\w+)\]\u200B\u200B/g
+
+/**
+ * Regex to find user-visible element references like @#1 @#2 in text.
+ */
+export const ELEMENT_REF_REGEX = /@#(\d+)/g
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,23 +53,21 @@ export function ChatInput() {
   const isAgentBusy = useChatStore(s => s.isAgentBusy)
   const messageQueue = useChatStore(s => s.messageQueue)
   const messages = useChatStore(s => s.messages)
-  const selectedElementRef = useChatStore(s => s.selectedElementRef)
-  const setSelectedElementRef = useChatStore(s => s.setSelectedElementRef)
+  const selectedElements = useChatStore(s => s.selectedElements)
+  const addSelectedElement = useChatStore(s => s.addSelectedElement)
+  const removeSelectedElement = useChatStore(s => s.removeSelectedElement)
+  const clearSelectedElements = useChatStore(s => s.clearSelectedElements)
+  const selectElementTrigger = useChatStore(s => s.selectElementTrigger)
   const removeFromQueue = useChatStore(s => s.removeFromQueue)
   const reorderQueue = useChatStore(s => s.reorderQueue)
   const toggleQueueItemMode = useChatStore(s => s.toggleQueueItemMode)
   const { sendMessage } = useChatService()
   const { t } = useTranslation(['sidepanel', 'common'])
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const chipInputRef = useRef<ChipInputHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const ocrFileInputRef = useRef<HTMLInputElement>(null)
   const sendOnEnterRef = useRef(true)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // Debug: log when selectedElementRef changes
-  useEffect(() => {
-    console.log('[ChatInput] selectedElementRef changed:', selectedElementRef)
-  }, [selectedElementRef])
 
   // Voice recognition
   const { isListening, transcript, isSupported: voiceSupported, startListening, stopListening, resetTranscript } = useSpeechRecognition()
@@ -77,12 +92,45 @@ export function ChatInput() {
   // Unified "busy" flag: agent busy OR normal streaming OR compressing
   const isBusy = agentBusy || (isStreaming && !agentEnabled) || compressing
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+  // Start element selection mode
+  const handleSelectElement = useCallback(async () => {
+    try {
+      setIsSelectingElement(true)
+
+      // Get current active tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab.id) {
+        setIsSelectingElement(false)
+        return
+      }
+
+      if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
+        setIsSelectingElement(false)
+        return
+      }
+
+      // Use port-based IPC to avoid MV3 sendMessage timeout
+      const result = await selectElementViaPort(tab.id)
+      if (result) {
+        addSelectedElement(result)
+        // Focus input after selection
+        requestAnimationFrame(() => {
+          chipInputRef.current?.focus()
+        })
+      }
+    } catch (err) {
+      console.error('[SelectElement] Failed:', err)
+    } finally {
+      setIsSelectingElement(false)
     }
-  }, [input])
+  }, [addSelectedElement])
+
+  // React to keyboard shortcut trigger from Chrome command (via store counter)
+  useEffect(() => {
+    if (selectElementTrigger > 0 && !isBusy && !isSelectingElement) {
+      handleSelectElement()
+    }
+  }, [selectElementTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close extra buttons when clicking outside
   useEffect(() => {
@@ -96,20 +144,6 @@ export function ChatInput() {
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [showExtraButtons])
-
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const files = e.clipboardData.files
-    if (files.length > 0) {
-      e.preventDefault()
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        if (file.type.startsWith('image/')) {
-          const base64 = await fileToBase64(file)
-          setImages((prev) => [...prev, base64])
-        }
-      }
-    }
-  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -140,7 +174,7 @@ export function ChatInput() {
 
       // Check if model supports vision (multimodal)
       if (!isLikelyVisionModel(providerType, modelId)) {
-        setError(t('sidepanel:ocrNoVision'))
+        useChatStore.getState().setError(t('sidepanel:ocrNoVision'))
         return
       }
 
@@ -165,7 +199,7 @@ export function ChatInput() {
       }
 
       if (!baseUrl) {
-        setError(t('sidepanel:ocrError'))
+        useChatStore.getState().setError(t('sidepanel:ocrError'))
         return
       }
 
@@ -193,12 +227,12 @@ export function ChatInput() {
       const result = await provider.chat(ocrMessages)
       const text = result.content?.trim()
       if (!text) {
-        setError(t('sidepanel:ocrNoText'))
+        useChatStore.getState().setError(t('sidepanel:ocrNoText'))
         return
       }
       setInput(prev => prev + (prev ? '\n' : '') + text)
     } catch {
-      setError(t('sidepanel:ocrError'))
+      useChatStore.getState().setError(t('sidepanel:ocrError'))
     } finally {
       setOcrProcessing(false)
     }
@@ -208,315 +242,55 @@ export function ChatInput() {
     if (!input.trim()) return
     if (isStreaming && !agentEnabled) return
     if (compressing) return
-    sendMessage(input.trim(), images.length > 0 ? images : undefined)
+    // Build final text: append element markers so chat-service can resolve them
+    const elementSuffix = selectedElements.length > 0
+      ? selectedElements.map(el => elementMarker(el.agentId)).join('')
+      : ''
+    sendMessage(input.trim() + elementSuffix, images.length > 0 ? images : undefined)
     setInput('')
     setImages([])
-    setSelectedElementRef(null)
-  }
-
-  // Start element selection mode
-  const handleSelectElement = async () => {
-    try {
-      setIsSelectingElement(true)
-
-      // Get current active tab (handles tab switching)
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-      if (!tab.id) {
-        console.error('[Element Selection] No active tab found')
-        setIsSelectingElement(false)
-        return
-      }
-
-      if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
-        console.error('[Element Selection] Cannot select on internal pages')
-        setIsSelectingElement(false)
-        return
-      }
-
-      console.log('[Element Selection] Starting on tab:', tab.id, tab.url)
-
-      // Inject overlay script
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          console.log('[Element Selection Overlay] Injecting overlay...')
-
-          // Clean up any existing overlay first
-          const existing = document.getElementById('user-select-overlay')
-          if (existing) {
-            existing.remove()
-          }
-
-          // Annotate elements with agent IDs
-          const interactiveSelectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [contenteditable], [onclick]'
-          const interactives = document.querySelectorAll(interactiveSelectors)
-          let idx = 0
-          for (const el of interactives) {
-            if (!el.getAttribute('data-agent-id')) {
-              el.setAttribute('data-agent-id', `a${idx}`)
-              idx++
-            }
-          }
-
-          const MAX_TOTAL_IDS = 120
-          if (idx < MAX_TOTAL_IDS) {
-            const vpHeight = window.innerHeight
-            const clickCandidateSelectors = 'li, span, div'
-            const clickCandidates = document.querySelectorAll(clickCandidateSelectors)
-            for (const el of clickCandidates) {
-              if (idx >= MAX_TOTAL_IDS) break
-              if (el.getAttribute('data-agent-id')) continue
-              const rect = el.getBoundingClientRect()
-              if (rect.bottom <= 0 || rect.top >= vpHeight) continue
-              if (rect.width <= 0 || rect.height <= 0) continue
-              if (rect.width > window.innerWidth * 0.5 || rect.height > vpHeight * 0.5) continue
-              const style = window.getComputedStyle(el as HTMLElement)
-              if (style.display === 'none' || style.visibility === 'hidden') continue
-              if (style.cursor !== 'pointer') continue
-              if (el.querySelector('a, button, [data-agent-id]')) continue
-              const text = (el as HTMLElement).innerText?.trim() ?? ''
-              const ariaLabel = el.getAttribute('aria-label') ?? ''
-              if (text.length === 0 && ariaLabel.length === 0) continue
-              if (text.length > 200) continue
-
-              el.setAttribute('data-agent-id', `a${idx}`)
-              idx++
-            }
-          }
-
-          console.log('[Element Selection Overlay] Annotated', idx, 'elements')
-
-          // Create overlay - allow clicks to pass through except for highlighting
-          const overlay = document.createElement('div')
-          overlay.id = 'user-select-overlay'
-          overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 2147483646;
-            pointer-events: none;
-          `
-
-          // Create improved banner with better styling
-          const banner = document.createElement('div')
-          banner.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-            color: white;
-            padding: 16px 24px;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-            font-size: 14px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            z-index: 2147483647;
-            pointer-events: auto;
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            backdrop-filter: blur(10px);
-          `
-          banner.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                </svg>
-              </div>
-              <div>
-                <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">Select an Element</div>
-                <div style="opacity: 0.8; font-size: 13px;">Click any element • Press <kbd style="background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 4px; font-family: monospace;">ESC</kbd> to cancel</div>
-              </div>
-            </div>
-          `
-          overlay.appendChild(banner)
-
-          let hoverOutline: HTMLDivElement | null = null
-
-          // Define cleanup first (will be used by other functions)
-          const cleanup = () => {
-            console.log('[Element Selection Overlay] Cleaning up')
-            document.removeEventListener('mousemove', onMouseMove, true)
-            document.removeEventListener('click', onClick, true)
-            document.removeEventListener('keydown', onKeyDown, true)
-            window.removeEventListener('keydown', onKeyDown, true)
-            document.removeEventListener('keyup', onKeyUp, true)
-            window.removeEventListener('keyup', onKeyUp, true)
-            overlay.remove()
-            if (hoverOutline) hoverOutline.remove()
-          }
-
-          const onMouseMove = (e: MouseEvent) => {
-            if (hoverOutline) {
-              hoverOutline.remove()
-              hoverOutline = null
-            }
-
-            const target = e.target as HTMLElement
-            if (!target || target.id === 'user-select-overlay' || target.closest?.('#user-select-overlay')) {
-              return
-            }
-
-            const rect = target.getBoundingClientRect()
-            hoverOutline = document.createElement('div')
-            hoverOutline.style.cssText = `
-              position: fixed;
-              left: ${rect.left}px;
-              top: ${rect.top}px;
-              width: ${rect.width}px;
-              height: ${rect.height}px;
-              border: 3px solid #3b82f6;
-              background: rgba(59, 130, 246, 0.15);
-              pointer-events: none;
-              z-index: 2147483645;
-              box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
-              border-radius: 4px;
-            `
-            document.body.appendChild(hoverOutline)
-          }
-
-          const onClick = (e: MouseEvent) => {
-            const target = e.target as HTMLElement
-            if (!target || target.closest?.('#user-select-overlay')) {
-              return
-            }
-
-            // Prevent default click behavior
-            e.preventDefault()
-            e.stopPropagation()
-            e.stopImmediatePropagation()
-
-            const agentId = target.getAttribute('data-agent-id')
-            console.log('[Element Selection Overlay] Clicked element:', agentId, target.tagName)
-
-            // Clean up
-            cleanup()
-
-            // Send result
-            const result = agentId ? {
-              agentId,
-              tag: target.tagName.toLowerCase(),
-              text: target.innerText?.trim().slice(0, 100) || undefined,
-            } : null
-
-            console.log('[Element Selection Overlay] Sending result:', result)
-            chrome.runtime.sendMessage({
-              type: 'user_element_selected',
-              result,
-            }).catch((err) => {
-              console.error('[Element Selection Overlay] Failed to send result:', err)
-            })
-          }
-
-          const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' || e.key === 'Esc') {
-              e.preventDefault()
-              e.stopPropagation()
-              console.log('[Element Selection Overlay] ESC keydown pressed, canceling')
-              cleanup()
-              // Send cancel
-              chrome.runtime.sendMessage({
-                type: 'user_element_selected',
-                result: null,
-              }).catch((err) => {
-                console.error('[Element Selection Overlay] Failed to send cancel:', err)
-              })
-            }
-          }
-
-          const onKeyUp = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' || e.key === 'Esc') {
-              e.preventDefault()
-              e.stopPropagation()
-              console.log('[Element Selection Overlay] ESC keyup pressed, canceling')
-              cleanup()
-              // Send cancel
-              chrome.runtime.sendMessage({
-                type: 'user_element_selected',
-                result: null,
-              }).catch((err) => {
-                console.error('[Element Selection Overlay] Failed to send cancel:', err)
-              })
-            }
-          }
-
-          // Use capture phase to intercept clicks before they reach other elements
-          document.addEventListener('mousemove', onMouseMove, true)
-          document.addEventListener('click', onClick, true)
-          // Add listeners to both window and document for maximum reliability
-          window.addEventListener('keydown', onKeyDown, true)
-          document.addEventListener('keydown', onKeyDown, true)
-          window.addEventListener('keyup', onKeyUp, true)
-          document.addEventListener('keyup', onKeyUp, true)
-
-          document.body.appendChild(overlay)
-          console.log('[Element Selection Overlay] Overlay injected successfully')
-        },
-      })
-
-      // Wait for selection result with timeout using a one-time listener
-      const result = await new Promise<{ agentId: string; tag: string; text?: string } | null>((resolve) => {
-        let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-        const listener = (message: unknown) => {
-          console.log('[Element Selection Listener] Received message:', message)
-          if (!message || typeof message !== 'object') return
-          const msg = message as Record<string, unknown>
-          if (msg.type === 'user_element_selected') {
-            console.log('[Element Selection Listener] Got user_element_selected:', msg)
-            if (timeoutId) clearTimeout(timeoutId)
-            chrome.runtime.onMessage.removeListener(listener)
-            const result = (msg.result as { agentId: string; tag: string; text?: string } | null) ?? null
-            console.log('[Element Selection Listener] Resolving with:', result)
-            resolve(result)
-          }
-        }
-
-        chrome.runtime.onMessage.addListener(listener)
-        console.log('[Element Selection] Listener added, waiting for selection...')
-
-        timeoutId = setTimeout(() => {
-          console.log('[Element Selection] Timeout reached')
-          chrome.runtime.onMessage.removeListener(listener)
-          resolve(null)
-          // Clean up overlay on timeout
-          chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => {
-              const overlay = document.getElementById('user-select-overlay')
-              if (overlay) overlay.remove()
-              console.log('[Element Selection] Overlay cleaned up due to timeout')
-            },
-          }).catch(() => {})
-        }, 30000) // 30 second timeout
-      })
-
-      console.log('[Element Selection] Result:', result)
-      if (result) {
-        console.log('[Element Selection] Setting selected element:', result)
-        setSelectedElementRef(result)
-      } else {
-        console.log('[Element Selection] No result (cancelled or timed out)')
-      }
-    } catch (err) {
-      console.error('[Element Selection] Failed:', err)
-    } finally {
-      setIsSelectingElement(false)
-    }
-  }
-
-  const removeSelectedElement = () => {
-    setSelectedElementRef(null)
+    // clearSelectedElements is called by chat-service after resolving
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // ESC during element selection → cancel selection
+    if ((e.key === 'Escape' || e.key === 'Esc') && isSelectingElement) {
+      e.preventDefault()
+      chrome.runtime.sendMessage({ type: 'user_element_selected', result: null }).catch(() => {})
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0]
+        if (tab?.id) {
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => { document.getElementById('user-select-overlay')?.remove() },
+          }).catch(() => {})
+        }
+      })
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey && sendOnEnterRef.current) {
       e.preventDefault()
+      // Insert newline if shift is held, otherwise submit
       handleSubmit()
     }
   }
+
+  // Handle paste: detect images, let textarea handle text natively
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const files = e.clipboardData.files
+    if (files.length > 0) {
+      e.preventDefault()
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        if (file.type.startsWith('image/')) {
+          const base64 = await fileToBase64(file)
+          setImages((prev) => [...prev, base64])
+        }
+      }
+      return
+    }
+    // Let textarea handle text paste natively (no preventDefault needed)
+  }, [])
 
   // Compress conversation history — blocks all UI during execution
   const handleCompressHistory = async () => {
@@ -634,31 +408,75 @@ export function ChatInput() {
         </div>
       )}
 
-      {/* Selected element preview */}
-      {selectedElementRef && (
-        <div className="mb-2">
-          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-sm">
-            <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-            </svg>
-            <div className="flex items-center gap-1.5">
-              <span className="font-medium text-blue-700 dark:text-blue-300">{selectedElementRef.agentId}</span>
-              <span className="text-blue-600 dark:text-blue-400">&lt;{selectedElementRef.tag}&gt;</span>
-              {selectedElementRef.text && (
-                <span className="text-blue-600 dark:text-blue-400 max-w-[150px] truncate">"{selectedElementRef.text}"</span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={removeSelectedElement}
-              className="ml-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
-              title="Remove element"
-            >
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+      {/* Element tags bar — click a tag to insert @#N reference */}
+      {selectedElements.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {selectedElements.map((el, idx) => {
+            const colors = [
+              'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300',
+              'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300',
+              'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300',
+              'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300',
+              'bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300',
+            ]
+            const color = colors[idx % colors.length]
+            return (
+              <button
+                key={el.id}
+                type="button"
+                onClick={() => {
+                  const ref = `@#${idx + 1}`
+                  const textarea = chipInputRef.current?.textarea
+                  if (textarea) {
+                    const start = textarea.selectionStart
+                    const end = textarea.selectionEnd
+                    const newValue = input.slice(0, start) + ref + input.slice(end)
+                    setInput(newValue)
+                    requestAnimationFrame(() => {
+                      textarea.selectionStart = textarea.selectionEnd = start + ref.length
+                      textarea.focus()
+                    })
+                  } else {
+                    setInput(prev => prev + ref)
+                  }
+                }}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs cursor-pointer hover:opacity-80 transition-opacity ${color}`}
+                title={`Click to insert #${idx + 1} reference`}
+              >
+                <span className="font-semibold opacity-70">#{idx + 1}</span>
+                <span className="font-mono">{el.agentId}</span>
+                <span className="opacity-60">&lt;{el.tag}&gt;</span>
+                {el.text && (
+                  <span className="max-w-[100px] truncate opacity-70">
+                    &quot;{el.text}&quot;
+                  </span>
+                )}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeSelectedElement(el.id)
+                  }}
+                  className="ml-0.5 opacity-40 hover:opacity-80 transition-opacity"
+                  role="button"
+                  title="Remove element"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              clearSelectedElements()
+            }}
+            className="inline-flex items-center px-1.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Clear all elements"
+          >
+            Clear all
+          </button>
         </div>
       )}
 
@@ -693,16 +511,16 @@ export function ChatInput() {
       <div ref={containerRef} className="relative">
         <div className="flex items-end gap-2">
           <div className="relative flex-1">
-            <Textarea
-              ref={textareaRef}
+            <ChipInput
+              ref={chipInputRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={setInput}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder={getPlaceholder()}
               disabled={isTextareaDisabled}
-              rows={1}
-              className="flex-1 resize-none pr-24"
+              elementCount={selectedElements.length}
+              className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none pr-24 overflow-y-auto max-h-[120px] whitespace-pre-wrap break-words"
             />
 
             {/* Integrated buttons inside textarea */}
@@ -787,21 +605,21 @@ export function ChatInput() {
               variant="ghost"
               size="sm"
               className={`h-8 px-3 ${
-                selectedElementRef
+                selectedElements.length > 0
                   ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
                   : isSelectingElement
                     ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20'
                     : ''
               }`}
               disabled={isBusy || isSelectingElement}
-              title={isSelectingElement ? 'Selecting...' : selectedElementRef ? 'Element selected' : 'Select Element (Alt+Shift+E)'}
+              title={isSelectingElement ? 'Selecting...' : selectedElements.length > 0 ? 'Select More' : 'Select Element (Ctrl+Shift+E)'}
             >
               <svg className="w-4 h-4 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
-              {isSelectingElement ? 'Selecting...' : selectedElementRef ? 'Element Selected' : 'Select Element'}
-              {!isSelectingElement && !selectedElementRef && (
-                <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">⌥⇧E</kbd>
+              {isSelectingElement ? 'Selecting...' : selectedElements.length > 0 ? 'Select More' : 'Select Element'}
+              {!isSelectingElement && selectedElements.length === 0 && (
+                <kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">Ctrl Shift E</kbd>
               )}
             </Button>
 

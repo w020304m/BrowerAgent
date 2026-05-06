@@ -25,7 +25,6 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
   agent__get_element_by_description: 'find element',
   agent__get_page_screenshot: 'screenshot',
   agent__read_page: 'read page',
-  agent__select_element: 'select element',
   agent__click: 'click',
   agent__type: 'type',
   agent__select: 'select',
@@ -103,27 +102,6 @@ function formatArgsSummary(args: Record<string, unknown> | undefined): string {
   }).join(' ')
 }
 
-/**
- * Parse selected element result from agent__select_element tool.
- * Returns { agentId, tag, text } or null if not a valid element result.
- */
-function parseSelectedElement(result: string | undefined): { agentId: string; tag: string; text?: string } | null {
-  if (!result) return null
-  try {
-    const parsed = JSON.parse(result)
-    if (parsed && typeof parsed.agentId === 'string' && typeof parsed.tag === 'string') {
-      return {
-        agentId: parsed.agentId,
-        tag: parsed.tag,
-        text: parsed.text,
-      }
-    }
-  } catch {
-    // Not valid JSON
-  }
-  return null
-}
-
 interface ToolCallCardProps {
   toolName: string
   serverName?: string
@@ -149,8 +127,6 @@ export function ToolCallCard({
   const screenshotUrl = useMemo(() => result ? extractScreenshot(result) : null, [result])
   // Clean internal signal format from result for display
   const displayResult = result ? cleanResultContent(result) : undefined
-  // Parse selected element result for special display
-  const selectedElement = useMemo(() => toolName === 'agent__select_element' ? parseSelectedElement(displayResult) : null, [toolName, displayResult])
 
   // Compact mode: most tools show as a single line
   const hasDetails = (args && Object.keys(args).filter(k => args[k] != null).length > 0) || (result && result.length > 0)
@@ -211,30 +187,6 @@ export function ToolCallCard({
                 </span>
                 <div className="mt-1 rounded overflow-hidden border border-border/50">
                   <img src={screenshotUrl} alt="Screenshot" className="w-full h-auto max-h-80 object-contain bg-gray-100 dark:bg-gray-900" />
-                </div>
-              </div>
-            ) : selectedElement ? (
-              <div>
-                <span className="font-medium text-muted-foreground text-[10px] uppercase tracking-wider">
-                  {t('toolCallCard.result', 'Selected Element')}
-                </span>
-                <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-200 dark:border-blue-800">
-                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                      <line x1="12" y1="22.08" x2="12" y2="12" />
-                    </svg>
-                    {selectedElement.agentId}
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-[11px] border border-gray-200 dark:border-gray-700">
-                    &lt;{selectedElement.tag}&gt;
-                  </span>
-                  {selectedElement.text && (
-                    <span className="inline-flex items-center max-w-[200px] px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[11px] border border-gray-200 dark:border-gray-700 truncate">
-                      "{selectedElement.text}"
-                    </span>
-                  )}
                 </div>
               </div>
             ) : displayResult && displayResult.length > 0 ? (

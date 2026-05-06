@@ -36,7 +36,6 @@ export default defineConfig({
       default_title: '__MSG_openSidePanelToChat__'
     },
     host_permissions: ['<all_urls>'],
-    optional_host_permissions: ['<all_urls>'],
     commands: {
       _execute_action: {
         description: 'Open the Web UI',
@@ -48,6 +47,12 @@ export default defineConfig({
         description: 'Open the side panel',
         suggested_key: {
           default: 'Ctrl+Shift+Y'
+        }
+      },
+      select_element: {
+        description: 'Select an element on the page',
+        suggested_key: {
+          default: 'Ctrl+Shift+E'
         }
       }
     }

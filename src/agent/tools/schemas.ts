@@ -86,18 +86,6 @@ const perceptionTools: ToolDefinition[] = [
       },
     },
   },
-  {
-    name: 'agent__select_element',
-    description: 'Enter element selection mode. User can click an element to get its agentId. Use for precise targeting when snapshot has many elements.',
-    parameters: {
-      type: 'object',
-      properties: {
-        instruction: { type: 'string', description: 'Tell user what to click (e.g. "Click the product card you want to analyze").' },
-        tabId: tabIdParam,
-      },
-      required: ['instruction'],
-    },
-  },
 ]
 
 // ── Action tools (6) ──

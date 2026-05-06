@@ -68,3 +68,38 @@ export function signalPanelReady(): () => void {
   const port = chrome.runtime.connect({ name: 'pgCopilot' })
   return () => port.disconnect()
 }
+
+/**
+ * Select an element via long-lived port communication.
+ * Uses chrome.runtime.connect() instead of sendMessage to avoid
+ * MV3 response channel timeout when waiting for user click.
+ */
+export function selectElementViaPort(tabId: number): Promise<{ agentId: string; tag: string; text?: string } | null> {
+  return new Promise((resolve) => {
+    const port = chrome.runtime.connect({ name: 'select-element' })
+    const timeoutId = setTimeout(() => {
+      port.disconnect()
+      resolve(null)
+    }, 30_000)
+
+    port.onMessage.addListener((msg: unknown) => {
+      if (
+        msg &&
+        typeof msg === 'object' &&
+        (msg as Record<string, unknown>).type === 'select_element_result'
+      ) {
+        clearTimeout(timeoutId)
+        port.disconnect()
+        const result = (msg as { result: unknown }).result as { agentId: string; tag: string; text?: string } | null
+        resolve(result ?? null)
+      }
+    })
+
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timeoutId)
+      resolve(null)
+    })
+
+    port.postMessage({ type: 'select_element_start', tabId })
+  })
+}

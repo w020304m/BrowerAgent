@@ -10,6 +10,71 @@ import { ToolCallCard } from './ToolCallCard'
 import { Citations } from './SourceCard'
 import { filterReasoningContent } from './reasoning-filter'
 
+/** Regex matching element references in sent messages */
+const ELEMENT_REF_IN_MESSAGE = /\[element:\s*(\S+)\s*<(\w+)>(?:\s*"([^"]*)")?\]|\[Refers to element:\s*(\S+)\s*<(\w+)>(?:\s*"([^"]*)")?\]/g
+
+/**
+ * Render user message content with element references shown as inline chips.
+ */
+function renderUserContent(content: string) {
+  const parts: Array<{ type: 'text' | 'element'; text: string; agentId?: string; tag?: string }> = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  const regex = new RegExp(ELEMENT_REF_IN_MESSAGE.source, 'g')
+  while ((match = regex.exec(content)) !== null) {
+    // Add text before this match
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', text: content.slice(lastIndex, match.index) })
+    }
+    const agentId = match[1] ?? match[4]
+    const tag = match[2] ?? match[5]
+    const text = match[3] ?? match[6]
+    parts.push({ type: 'element', text: '', agentId, tag, text })
+    lastIndex = regex.lastIndex
+  }
+  // Remaining text
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', text: content.slice(lastIndex) })
+  }
+
+  if (parts.length === 0) {
+    // No element refs — render as before
+    return content.split('\n').map((line, i, arr) => (
+      <React.Fragment key={i}>
+        {line}
+        {i < arr.length - 1 && <br />}
+      </React.Fragment>
+    ))
+  }
+
+  return parts.map((part, i) => {
+    if (part.type === 'text') {
+      return part.text.split('\n').map((line, j) => (
+        <React.Fragment key={`${i}-${j}`}>
+          {line}
+          <br />
+        </React.Fragment>
+      ))
+    }
+    return (
+      <span
+        key={`el-${i}`}
+        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded
+          bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300
+          text-[11px] font-medium align-middle whitespace-nowrap"
+      >
+        <svg className="w-3 h-3 opacity-60 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+        </svg>
+        {part.agentId}
+        <span className="opacity-60">&lt;{part.tag}&gt;</span>
+        {part.text && <span className="opacity-70 max-w-[80px] truncate">&quot;{part.text}&quot;</span>}
+      </span>
+    )
+  })
+}
+
 interface MessageBubbleProps {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
@@ -292,12 +357,7 @@ export function MessageBubble({
             )}
             <div className={`markdown-body ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>
               {isUser ? (
-                content.split('\n').map((line, i) => (
-                  <React.Fragment key={i}>
-                    {line}
-                    {i < content.split('\n').length - 1 && <br />}
-                  </React.Fragment>
-                ))
+                renderUserContent(content)
               ) : (
                 <span dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
               )}
