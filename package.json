@@ -18,6 +18,9 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@plasmohq/storage": "^1.9.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
