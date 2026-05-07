@@ -1,3 +1,13 @@
+/**
+ * ChipInput - Simplified and optimized
+ *
+ * Features:
+ * - Backdrop rendering for @#N chip highlighting
+ * - Support for chip hover callbacks
+ * - Simplified scroll synchronization
+ * - Auto-resize textarea
+ */
+
 import React, { useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react'
 
 /** 5-color cycle matching the element tags bar */
@@ -21,6 +31,7 @@ interface ChipInputProps {
   onChange: (value: string) => void
   onKeyDown: (e: React.KeyboardEvent) => void
   onPaste: (e: React.ClipboardEvent) => void
+  onChipHover?: (num: number | null) => void
   placeholder: string
   disabled: boolean
   elementCount: number
@@ -81,7 +92,14 @@ function splitToSegments(text: string, elementCount: number): Segment[] {
   return result
 }
 
-function renderHighlighted(value: string, elementCount: number): React.ReactNode[] {
+/**
+ * Render highlighted segments with hover support
+ */
+function renderHighlighted(
+  value: string,
+  elementCount: number,
+  onChipHover?: (num: number | null) => void,
+): React.ReactNode[] {
   const segments = splitToSegments(value, elementCount)
   return segments.map((seg, i) => {
     if (seg.type === 'text') {
@@ -89,10 +107,12 @@ function renderHighlighted(value: string, elementCount: number): React.ReactNode
     }
     // chip — only render with color if index is valid
     const isValid = seg.num >= 1 && seg.num <= elementCount
-    const c = CHIP_COLORS[(seg.num - 1) % CHIP_COLORS.length]!
+    const c = CHIP_COLORS[(seg.num - 1) % CHIP_COLORS.length]
     return (
       <span
         key={i}
+        onMouseEnter={() => onChipHover?.(seg.num)}
+        onMouseLeave={() => onChipHover?.(null)}
         style={{
           display: 'inline-block',
           padding: '0px 4px',
@@ -106,7 +126,10 @@ function renderHighlighted(value: string, elementCount: number): React.ReactNode
           whiteSpace: 'nowrap',
           userSelect: 'none',
           margin: '0 1px',
+          cursor: isValid ? 'pointer' : 'default',
+          transition: 'all 0.15s',
         }}
+        className="chip-ref"
       >
         #{seg.num}
       </span>
@@ -116,7 +139,7 @@ function renderHighlighted(value: string, elementCount: number): React.ReactNode
 
 export const ChipInput = forwardRef<ChipInputHandle, ChipInputProps>(
   function ChipInput(
-    { value, onChange, onKeyDown, onPaste, placeholder, disabled, elementCount, className },
+    { value, onChange, onKeyDown, onPaste, onChipHover, placeholder, disabled, elementCount, className },
     ref,
   ) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -136,70 +159,27 @@ export const ChipInput = forwardRef<ChipInputHandle, ChipInputProps>(
       }
     }, [value])
 
-    // Sync scroll between textarea and backdrop
+    // Simplified scroll synchronization
     const handleScroll = useCallback(() => {
       if (backdropRef.current && textareaRef.current) {
         backdropRef.current.scrollTop = textareaRef.current.scrollTop
+        backdropRef.current.scrollLeft = textareaRef.current.scrollLeft
       }
     }, [])
 
-    // Intercept Backspace/Delete for atomic chip deletion.
-    // When the cursor is adjacent to a @#N pattern, delete the whole thing at once.
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      const ta = textareaRef.current
-      if (!ta) {
-        onKeyDown(e)
-        return
-      }
-
-      // Only intercept when there's no selection range (user is just moving cursor)
-      const hasSelection = ta.selectionStart !== ta.selectionEnd
-
-      if (!hasSelection) {
-        const pos = ta.selectionStart
-        const val = ta.value
-
-        if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey) {
-          // Check if cursor is right after a @#N pattern
-          const before = val.slice(0, pos)
-          const match = before.match(/@#(\d+)$/)
-          if (match) {
-            e.preventDefault()
-            const chipStart = pos - match[0].length
-            onChange(val.slice(0, chipStart) + val.slice(pos))
-            requestAnimationFrame(() => {
-              ta.selectionStart = ta.selectionEnd = chipStart
-            })
-            return
-          }
-        }
-
-        if (e.key === 'Delete' && !e.metaKey && !e.ctrlKey) {
-          // Check if cursor is right before a @#N pattern
-          const after = val.slice(pos)
-          const match = after.match(/^@#(\d+)/)
-          if (match) {
-            e.preventDefault()
-            const chipEnd = pos + match[0].length
-            onChange(val.slice(0, pos) + val.slice(chipEnd))
-            // cursor stays at pos
-            return
-          }
-        }
-      }
-
-      // Forward all other keys to parent handler
-      onKeyDown(e)
-    }, [onChange, onKeyDown])
-
     return (
       <div className="relative">
-        {/* Keep textarea selection text transparent so raw @#N is never revealed */}
-        <style>{`.chip-input-selection::selection{background:rgba(59,130,246,.15);color:transparent;-webkit-text-fill-color:transparent}.chip-input-selection::-moz-selection{background:rgba(59,130,246,.15);color:transparent}`}</style>
-        {/* Overlay: renders visible text + colored chips */}
+        <style>{`
+          .chip-input-selection::selection {
+            background: rgba(59,130,246,.3);
+            color: inherit;
+          }
+        `}</style>
+
+        {/* Backdrop - renders visible text + colored chips */}
         <div
           ref={backdropRef}
-          className="absolute inset-0 overflow-hidden pointer-events-none"
+          className="absolute inset-0 overflow-hidden pointer-events-none select-none"
           aria-hidden="true"
           style={{
             // Match textarea styles exactly
@@ -214,14 +194,15 @@ export const ChipInput = forwardRef<ChipInputHandle, ChipInputProps>(
             paddingRight: '100px',
           }}
         >
-          {renderHighlighted(value, elementCount)}
+          {renderHighlighted(value, elementCount, onChipHover)}
         </div>
+
         {/* Textarea: text transparent, caret visible */}
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={onKeyDown}
           onPaste={onPaste}
           onScroll={handleScroll}
           placeholder={placeholder}
@@ -229,7 +210,7 @@ export const ChipInput = forwardRef<ChipInputHandle, ChipInputProps>(
           className={`${className ?? ''} chip-input-selection`}
           style={{
             color: 'transparent',
-            caretColor: 'currentColor',
+            caretColor: 'rgb(59, 130, 246)', // 明确的光标颜色
             background: 'transparent',
           }}
         />

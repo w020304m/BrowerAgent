@@ -1,3 +1,14 @@
+/**
+ * ModelSelector - Provider and model selection dropdown
+ *
+ * Features:
+ * - Provider selection (Ollama, OpenAI, Anthropic, Google, OpenRouter, Chrome AI)
+ * - Multi-instance support for OpenAI-compatible providers
+ * - Base URL configuration
+ * - Model list fetching with search
+ * - Context window configuration with auto-detection
+ */
+
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/store/chat-store'
@@ -8,145 +19,10 @@ import { openaiConfigRepo } from '@/db/repositories/openai-config.repository'
 import { getProviderModels } from '@/providers/provider-registry'
 import type { ProviderInstance } from '@/providers/provider-registry'
 import { agentSettings } from '@/storage/agent-settings'
-import { smartFetch } from '@/providers/proxy-fetch'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-
-const PROVIDERS: { value: ProviderType; label: string }[] = [
-  { value: 'ollama', label: 'Ollama' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'google', label: 'Google AI' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'chrome-ai', label: 'Chrome AI' },
-]
-
-/** Known context lengths for popular models (tokens) */
-const KNOWN_CONTEXT_LENGTHS: Record<string, number> = {
-  // Only major provider-specific models that differ from 128K default
-  'claude-': 200000,
-  'gemini-2': 1048576,
-  'gemini-1.5-pro': 2097152,
-  'o1': 200000,
-  'o3': 200000,
-  'llama-4': 1048576,
-  'gpt-4-': 128000,
-  'gpt-3.5': 16385,
-}
-
-function formatSize(bytes: number): string {
-  if (bytes === 0) return ''
-  const gb = bytes / (1024 * 1024 * 1024)
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`
-}
-
-/** Format context length for display: 1M, 200K, 8192 */
-function formatContextLength(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    const m = tokens / 1_000_000
-    return m === Math.floor(m) ? `${m}M` : `${m.toFixed(1)}M`
-  }
-  if (tokens >= 1000) {
-    const k = tokens / 1000
-    return k === Math.floor(k) ? `${k}K` : `${k.toFixed(1)}K`
-  }
-  return String(tokens)
-}
-
-/** Parse user input to token count. Accepts: "1M", "200K", "128000", "1.5M", "8k", "0.5m", "2097152" */
-function parseContextLength(raw: string): number {
-  const s = raw.trim().toUpperCase()
-  if (!s) return 0
-
-  // Match number + optional suffix (K/M/B/T or no suffix)
-  const match = s.match(/^(\d+(?:\.\d+)?)\s*([KMBT])?$/)
-  if (!match) {
-    // Try plain number without suffix
-    const plain = parseInt(s, 10)
-    return isNaN(plain) || plain <= 0 ? 0 : plain
-  }
-
-  const num = parseFloat(match[1])
-  const suffix = match[2]
-
-  if (isNaN(num) || num <= 0) return 0
-
-  switch (suffix) {
-    case 'M': return Math.floor(num * 1_000_000)
-    case 'K': return Math.floor(num * 1_000)
-    case 'B': return Math.floor(num * 1_000_000_000)
-    case 'T': return Math.floor(num * 1_000_000_000_000)
-    default: return Math.floor(num) // raw token count like "128000"
-  }
-}
-
-/** Try to match a model ID against known context lengths */
-function lookupKnownContextLength(modelId: string): number | undefined {
-  const lower = modelId.toLowerCase()
-  for (const [key, value] of Object.entries(KNOWN_CONTEXT_LENGTHS)) {
-    if (lower.startsWith(key) || lower.includes(key)) return value
-  }
-  return undefined
-}
-
-/**
- * Fetch context length from Ollama /api/show endpoint.
- * Returns the context_length from model info, or undefined.
- */
-async function fetchOllamaContextLength(baseUrl: string, modelId: string): Promise<number | undefined> {
-  try {
-    const response = await smartFetch(`${baseUrl}/api/show`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: modelId }),
-    })
-    if (!response.ok) return undefined
-    const data = await response.json() as {
-      model_info?: Record<string, unknown>
-      parameters?: string
-    }
-    // Try model_info first (Ollama >= 0.1.30)
-    if (data.model_info) {
-      const contextLength = data.model_info['context_length'] as number | undefined
-      if (contextLength && contextLength > 0) return contextLength
-    }
-    // Fallback: parse num_ctx from parameters string
-    if (data.parameters) {
-      const match = data.parameters.match(/num_ctx\s+(\d+)/)
-      if (match) return parseInt(match[1], 10)
-    }
-    return undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Fetch context length from OpenAI-compatible models endpoint.
- * The /v1/models/:id endpoint sometimes includes context_window or max_tokens.
- */
-async function fetchOpenAIContextLength(baseUrl: string, apiKey: string | undefined, modelId: string): Promise<number | undefined> {
-  try {
-    const headers: Record<string, string> = {}
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-
-    const normalizedUrl = baseUrl.replace(/\/$/, '')
-    const url = /\/v\d+$/.test(normalizedUrl)
-      ? `${normalizedUrl}/models/${encodeURIComponent(modelId)}`
-      : `${normalizedUrl}/v1/models/${encodeURIComponent(modelId)}`
-
-    const response = await smartFetch(url, { headers })
-    if (!response.ok) return undefined
-
-    const data = await response.json() as {
-      context_window?: number
-      max_context_length?: number
-      metadata?: { context_length?: number }
-    }
-    return data.context_window ?? data.max_context_length ?? data.metadata?.context_length
-  } catch {
-    return undefined
-  }
-}
+import { PROVIDERS } from './constants'
+import { formatSize, formatContextLength, parseContextLength } from './utils'
+import { detectContextLength } from './context-length'
 
 export function ModelSelector() {
   const { t } = useTranslation('sidepanel')
@@ -307,29 +183,13 @@ export function ModelSelector() {
 
     let cancelled = false
     const detect = async () => {
-      let detected: number | undefined
-
-      // Try Ollama API
-      if (providerType === 'ollama' && baseUrl) {
-        detected = await fetchOllamaContextLength(baseUrl, modelId)
-      }
-      // Try OpenAI-compatible API (works for OpenAI, Anthropic-compatible, etc.)
-      else if (providerType !== 'ollama' && providerType !== 'chrome-ai' && baseUrl) {
-        detected = await fetchOpenAIContextLength(baseUrl, apiKey, modelId)
-      }
-
-      // Fallback to known model list
-      if (!detected) {
-        detected = lookupKnownContextLength(modelId)
-      }
+      const detected = await detectContextLength(providerType, baseUrl, apiKey, modelId)
 
       if (cancelled) return
 
-      // Default to 128K if nothing detected
-      const finalValue = (detected && detected > 0) ? detected : 128000
-      setContextWindowAuto(finalValue)
+      setContextWindowAuto(detected)
       if (contextWindowTokens === 0) {
-        setContextWindowDisplay(formatContextLength(finalValue))
+        setContextWindowDisplay(formatContextLength(detected))
       }
       setContextWindowDetectedFor(`${providerType}:${modelId}`)
     }
@@ -381,7 +241,7 @@ export function ModelSelector() {
       if (config) {
         await openaiConfigRepo.update(config.id, { baseUrl: newUrl })
       } else {
-        const newConfig = await openaiConfigRepo.add({
+        const newConfigId = await openaiConfigRepo.add({
           id: crypto.randomUUID(),
           name: `${PROVIDERS.find(p => p.value === providerType)?.label ?? providerType}`,
           baseUrl: newUrl,
@@ -390,7 +250,7 @@ export function ModelSelector() {
           provider: providerType,
           db_type: 'openai-config',
         })
-        setSelectedInstanceId(newConfig.id)
+        setSelectedInstanceId(newConfigId)
       }
       setBaseUrl(newUrl)
       setEditUrlValue(newUrl)

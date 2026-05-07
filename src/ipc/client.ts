@@ -73,8 +73,14 @@ export function signalPanelReady(): () => void {
  * Select an element via long-lived port communication.
  * Uses chrome.runtime.connect() instead of sendMessage to avoid
  * MV3 response channel timeout when waiting for user click.
+ *
+ * @param tabId - The tab ID to select element from
+ * @param continuous - Whether to enable continuous selection mode (default: false)
  */
-export function selectElementViaPort(tabId: number): Promise<{ agentId: string; tag: string; text?: string } | null> {
+export function selectElementViaPort(
+  tabId: number,
+  continuous: boolean = false
+): Promise<{ agentId: string; tag: string; text?: string } | null> {
   return new Promise((resolve) => {
     const port = chrome.runtime.connect({ name: 'select-element' })
     const timeoutId = setTimeout(() => {
@@ -100,6 +106,6 @@ export function selectElementViaPort(tabId: number): Promise<{ agentId: string; 
       resolve(null)
     })
 
-    port.postMessage({ type: 'select_element_start', tabId })
+    port.postMessage({ type: 'select_element_start', tabId, continuous })
   })
 }

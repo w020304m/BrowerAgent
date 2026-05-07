@@ -52,3 +52,4 @@ docs/
 
 # Analysis / scratch docs
 WEBAGENT_*.md
+package-lock.json

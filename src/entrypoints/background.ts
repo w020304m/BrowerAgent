@@ -192,15 +192,15 @@ export default defineBackground(() => {
 
     // Element selection via long-lived port (avoids MV3 sendMessage timeout)
     if (port.name === 'select-element') {
-      port.onMessage.addListener(async (msg: { type: string; tabId: number }) => {
+      port.onMessage.addListener(async (msg: { type: string; tabId: number; continuous?: boolean }) => {
         if (msg.type !== 'select_element_start') return
-        const { tabId } = msg
+        const { tabId, continuous = false } = msg
 
         try {
           // Inject the element selection overlay into the page
           await chrome.scripting.executeScript({
             target: { tabId },
-            func: () => {
+            func: (isContinuous: boolean) => {
               // Clean up any existing overlay
               const existing = document.getElementById('user-select-overlay')
               if (existing) existing.remove()
@@ -266,14 +266,15 @@ export default defineBackground(() => {
                     </svg>
                   </div>
                   <div>
-                    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">Select an Element</div>
-                    <div style="opacity:0.8;font-size:13px;">Click any element &bull; Press <kbd style="background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:4px;font-family:monospace;">ESC</kbd> to cancel</div>
+                    <div class="selection-title" style="font-weight:600;font-size:15px;margin-bottom:4px;">${isContinuous ? 'Continuous Selection (0)' : 'Select an Element'}</div>
+                    <div style="opacity:0.8;font-size:13px;">Click any element &bull; Press <kbd style="background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:4px;font-family:monospace;">ESC</kbd> to cancel${isContinuous ? ' &bull; Press <kbd style="background:rgba(255,255,255,0.15);padding:2px 6px;border-radius:4px;font-family:monospace;">Enter</kbd> to finish' : ''}</div>
                   </div>
                 </div>
               `
               overlay.appendChild(banner)
 
               let hoverOutline: HTMLDivElement | null = null
+              let selectedCount = 0
 
               const cleanup = () => {
                 document.removeEventListener('mousemove', onMouseMove, true)
@@ -320,18 +321,49 @@ export default defineBackground(() => {
                   target.setAttribute('data-agent-id', agentId)
                 }
 
-                cleanup()
-                chrome.runtime.sendMessage({
-                  type: 'user_element_selected',
-                  result: { agentId, tag: target.tagName.toLowerCase(), text: target.innerText?.trim().slice(0, 100) || undefined },
-                }).catch(() => {})
+                if (isContinuous) {
+                  // Continuous mode: send event but don't close overlay
+                  chrome.runtime.sendMessage({
+                    type: 'user_element_selected',
+                    result: { agentId, tag: target.tagName.toLowerCase(), text: target.innerText?.trim().slice(0, 100) || undefined },
+                    continuous: true,
+                  }).catch(() => {})
+
+                  // Update counter
+                  selectedCount++
+                  const counter = banner.querySelector('.selection-title')
+                  if (counter) {
+                    counter.textContent = `Continuous Selection (${selectedCount})`
+                  }
+                } else {
+                  // Single mode: close overlay
+                  cleanup()
+                  chrome.runtime.sendMessage({
+                    type: 'user_element_selected',
+                    result: { agentId, tag: target.tagName.toLowerCase(), text: target.innerText?.trim().slice(0, 100) || undefined },
+                  }).catch(() => {})
+                }
               }
 
               const onKeyDown = (e: KeyboardEvent) => {
                 if (e.key === 'Escape' || e.key === 'Esc') {
                   e.preventDefault(); e.stopPropagation()
                   cleanup()
-                  chrome.runtime.sendMessage({ type: 'user_element_selected', result: null }).catch(() => {})
+                  chrome.runtime.sendMessage({
+                    type: 'user_element_selected',
+                    result: null,
+                    ...(isContinuous ? { continuous: true, cancelled: true } : {})
+                  }).catch(() => {})
+                }
+                if (isContinuous && (e.key === 'Enter')) {
+                  e.preventDefault(); e.stopPropagation()
+                  cleanup()
+                  chrome.runtime.sendMessage({
+                    type: 'user_element_selected',
+                    result: null,
+                    continuous: true,
+                    finished: true,
+                  }).catch(() => {})
                 }
               }
 
@@ -341,6 +373,7 @@ export default defineBackground(() => {
               document.addEventListener('keydown', onKeyDown, true)
               document.body.appendChild(overlay)
             },
+            args: [continuous],
           })
         } catch (err) {
           console.error('[SelectElement] executeScript failed:', err)
@@ -364,9 +397,36 @@ export default defineBackground(() => {
             if (!message || typeof message !== 'object') return
             const msg = message as Record<string, unknown>
             if (msg.type === 'user_element_selected') {
-              clearTimeout(timeoutId)
-              chrome.runtime.onMessage.removeListener(listener)
-              resolve((msg.result as { agentId: string; tag: string; text?: string } | null) ?? null)
+              // Handle different scenarios
+              const isContinuousMsg = msg.continuous === true
+              const isCancelled = msg.cancelled === true
+              const isFinished = msg.finished === true
+
+              if (isContinuousMsg) {
+                // Continuous selection mode
+                if (isCancelled) {
+                  // User cancelled - return null
+                  clearTimeout(timeoutId)
+                  chrome.runtime.onMessage.removeListener(listener)
+                  resolve(null)
+                } else if (isFinished) {
+                  // User finished - return the result without data (signals completion)
+                  clearTimeout(timeoutId)
+                  chrome.runtime.onMessage.removeListener(listener)
+                  // For continuous mode, we return a special marker to indicate completion
+                  resolve({ agentId: '__CONTINUOUS_COMPLETE__', tag: 'system', text: undefined })
+                } else {
+                  // Element selected in continuous mode - return the result
+                  clearTimeout(timeoutId)
+                  chrome.runtime.onMessage.removeListener(listener)
+                  resolve((msg.result as { agentId: string; tag: string; text?: string } | null) ?? null)
+                }
+              } else {
+                // Normal single selection mode
+                clearTimeout(timeoutId)
+                chrome.runtime.onMessage.removeListener(listener)
+                resolve((msg.result as { agentId: string; tag: string; text?: string } | null) ?? null)
+              }
             }
           }
           chrome.runtime.onMessage.addListener(listener)

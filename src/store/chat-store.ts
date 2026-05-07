@@ -64,6 +64,14 @@ export interface ChatState {
   selectedElements: Array<{ id: string; agentId: string; tag: string; text?: string }>
   /** Counter incremented by keyboard shortcut to trigger element selection */
   selectElementTrigger: number
+  /** Currently hovered element reference number (for highlighting) */
+  hoveredElementRef: number | null
+  /** Continuous selection mode is active */
+  isContinuousSelectMode: boolean
+  /** Elements selected during continuous selection (not yet confirmed) */
+  pendingSelectedElements: Array<{ agentId: string; tag: string; text?: string }>
+  /** Element panel is expanded (true) or collapsed (false) */
+  elementPanelOpen: boolean
   /** Summary of last agent run for task continuation */
   lastAgentSummary: AgentRunSummary | null
   /** Current agent task plan for UI display */
@@ -134,6 +142,22 @@ export interface ChatState {
   removeSelectedElement: (id: string) => void
   /** Clear all selected elements */
   clearSelectedElements: () => void
+  /** Reorder selected elements by ID (for drag-and-drop) */
+  reorderSelectedElements: (fromId: string, toId: string) => void
+  /** Set hovered element reference number */
+  setHoveredElementRef: (ref: number | null) => void
+  /** Set continuous selection mode */
+  setContinuousSelectMode: (enabled: boolean) => void
+  /** Confirm continuous selection, add pending elements to selectedElements */
+  confirmContinuousSelection: () => void
+  /** Cancel continuous selection, clear pending elements */
+  cancelContinuousSelection: () => void
+  /** Add pending element during continuous selection */
+  addPendingElement: (el: { agentId: string; tag: string; text?: string }) => void
+  /** Remove pending element during continuous selection */
+  removePendingElement: (agentId: string) => void
+  /** Set element panel open/closed state */
+  setElementPanelOpen: (open: boolean) => void
   /** Trigger element selection via keyboard shortcut */
   triggerSelectElement: () => void
   /** Set last agent run summary for task continuation */
@@ -183,6 +207,10 @@ const initialState = {
   pendingAskUser: null as { toolCallId: string; question: string; options?: string[] } | null,
   selectedElements: [] as Array<{ id: string; agentId: string; tag: string; text?: string }>,
   selectElementTrigger: 0,
+  hoveredElementRef: null as number | null,
+  isContinuousSelectMode: false,
+  pendingSelectedElements: [] as Array<{ agentId: string; tag: string; text?: string }>,
+  elementPanelOpen: true,
   lastAgentSummary: null as AgentRunSummary | null,
   agentPlan: null as AgentPlan | null,
   messageQueue: [] as QueueItem[],
@@ -260,6 +288,10 @@ export const useChatStore = create<ChatState>((set) => ({
       agentActionInfo: null,
       pendingAskUser: null,
       selectedElements: [],
+      hoveredElementRef: null,
+      isContinuousSelectMode: false,
+      pendingSelectedElements: [],
+      elementPanelOpen: true,
       lastAgentSummary: null,
       agentPlan: null,
       messageQueue: [],
@@ -442,6 +474,52 @@ export const useChatStore = create<ChatState>((set) => ({
     selectedElements: s.selectedElements.filter(e => e.id !== id),
   })),
   clearSelectedElements: () => set({ selectedElements: [] }),
+
+  reorderSelectedElements: (fromId, toId) => set((state) => {
+    const elements = [...state.selectedElements]
+    const fromIdx = elements.findIndex(e => e.id === fromId)
+    const toIdx = elements.findIndex(e => e.id === toId)
+    if (fromIdx === -1 || toIdx === -1) return {}
+
+    const [removed] = elements.splice(fromIdx, 1)
+    elements.splice(toIdx, 0, removed)
+
+    return { selectedElements: elements }
+  }),
+
+  setHoveredElementRef: (ref) => set({ hoveredElementRef: ref }),
+
+  setContinuousSelectMode: (enabled) => set({
+    isContinuousSelectMode: enabled,
+    pendingSelectedElements: enabled ? [] : [],
+  }),
+
+  confirmContinuousSelection: () => set((state) => ({
+    selectedElements: [
+      ...state.selectedElements,
+      ...state.pendingSelectedElements.map(el => ({
+        ...el,
+        id: crypto.randomUUID(),
+      })),
+    ],
+    pendingSelectedElements: [],
+    isContinuousSelectMode: false,
+  })),
+
+  cancelContinuousSelection: () => set({
+    pendingSelectedElements: [],
+    isContinuousSelectMode: false,
+  }),
+
+  addPendingElement: (el) => set((state) => ({
+    pendingSelectedElements: [...state.pendingSelectedElements, el],
+  })),
+
+  removePendingElement: (agentId) => set((state) => ({
+    pendingSelectedElements: state.pendingSelectedElements.filter(el => el.agentId !== agentId),
+  })),
+
+  setElementPanelOpen: (open) => set({ elementPanelOpen: open }),
 
   triggerSelectElement: () => set((s) => ({ selectElementTrigger: s.selectElementTrigger + 1 })),
 
