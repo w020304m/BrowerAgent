@@ -22,10 +22,10 @@ export interface SelectedElement {
 export const ELEMENT_MARKER_REGEX = /​​\[(\w+)\]​​/g
 
 /**
- * User-visible reference format using agentId: @#{agentId}
- * Examples: @#btn-submit, @#main-content, @#card-123
+ * User-visible reference format using agentId: {{agentId}}
+ * Examples: {{btn-submit}}, {{main-content}}, {{card-123}}
  */
-export const ELEMENT_REF_REGEX = /@#([\w-]+)/g
+export const ELEMENT_REF_REGEX = /\{\{([\w-]+)\}\}/g
 
 /**
  * Build the zero-width marker string for an element reference.

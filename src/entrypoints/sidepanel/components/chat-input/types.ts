@@ -14,7 +14,7 @@ export interface SortableElementChipProps {
   colors: readonly string[]
   onRemove: () => void
   onInsertRef: () => void
-  hoveredRef: number | null
+  hoveredRef: string | null
 }
 
 /**
@@ -81,7 +81,7 @@ export interface ElementTagsContainerProps {
   selectedElements: Array<{ id: string; agentId: string; tag: string; text?: string }>
   pendingElements: Array<{ agentId: string; tag: string; text?: string }>
   colors: readonly string[]
-  hoveredRef: number | null
+  hoveredRef: string | null
   onRemove: (id: string) => void
   onInsertRef: (agentId: string) => void
   onClearAll: () => void

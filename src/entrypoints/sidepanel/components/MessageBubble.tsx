@@ -30,7 +30,7 @@ function renderUserContent(content: string) {
     const agentId = match[1] ?? match[4]
     const tag = match[2] ?? match[5]
     const text = match[3] ?? match[6]
-    parts.push({ type: 'element', text: '', agentId, tag, text })
+    parts.push({ type: 'element', agentId, tag, text })
     lastIndex = regex.lastIndex
   }
   // Remaining text
@@ -60,16 +60,12 @@ function renderUserContent(content: string) {
     return (
       <span
         key={`el-${i}`}
-        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded
+        className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded
           bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300
-          text-[11px] font-medium align-middle whitespace-nowrap"
+          text-[11px] font-mono font-medium align-middle whitespace-nowrap"
       >
-        <svg className="w-3 h-3 opacity-60 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-        </svg>
         {part.agentId}
-        <span className="opacity-60">&lt;{part.tag}&gt;</span>
-        {part.text && <span className="opacity-70 max-w-[80px] truncate">&quot;{part.text}&quot;</span>}
+        <span className="opacity-50">&lt;{part.tag}&gt;</span>
       </span>
     )
   })
@@ -214,6 +210,11 @@ export function MessageBubble({
         <div className="flex-1 h-px bg-gray-300 dark:bg-gray-600" />
       </div>
     )
+  }
+
+  // Suppress empty assistant bubbles (agent creates content:'' for reasoning/tool calls)
+  if (isAssistant && !content && !reasoningContent && messageKind !== 'tool_result' && messageKind !== 'assistant_tool_calls') {
+    return null
   }
 
   // Tool result message

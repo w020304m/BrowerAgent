@@ -1,102 +1,65 @@
 /**
- * ElementTagsContainer - Container for element tags with drag-and-drop
- *
- * Displays selected and pending element tags with:
- * - Drag-and-drop reordering
- * - Click to insert reference
- * - Remove individual elements
- * - Clear all button
+ * ElementTagsContainer - Element tags with click-to-insert and remove
  */
 
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ELEMENT_TAG_COLORS } from '@/types/element-reference'
-import { SortableElementChip } from './SortableElementChip'
-import type { ElementTagsContainerProps } from './types'
+
+interface ElementTagsContainerProps {
+  selectedElements: Array<{ id: string; agentId: string; tag: string; text?: string }>
+  hoveredRef: string | null
+  colors: readonly string[]
+  onRemove: (id: string) => void
+  onInsertRef: (agentId: string) => void
+  onClearAll: () => void
+}
 
 export function ElementTagsContainer({
   selectedElements,
-  pendingElements,
   hoveredRef,
   colors,
   onRemove,
   onInsertRef,
   onClearAll,
-  onDragEnd,
 }: ElementTagsContainerProps) {
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      onDragEnd({ active: { id: String(active.id) }, over: over ? { id: String(over.id) } : null })
-    }
-  }
-  // Drag-and-drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  )
-
-  const hasElements = selectedElements.length > 0 || pendingElements.length > 0
-
-  if (!hasElements) return null
-
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext
-        items={selectedElements.map(el => el.id)}
-        strategy={verticalListSortingStrategy}
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {selectedElements.map((el, idx) => {
+        const color = colors[idx % colors.length]
+        const isHovered = hoveredRef === el.agentId
+        return (
+          <button
+            key={el.id}
+            type="button"
+            onClick={() => onInsertRef(el.agentId)}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs cursor-pointer hover:opacity-80 transition-all ${
+              isHovered ? 'ring-2 ring-offset-1 ring-blue-500 scale-105' : ''
+            } ${color}`}
+          >
+            <span className="font-semibold opacity-70">#{idx + 1}</span>
+            <span className="font-mono text-[10px] opacity-80 max-w-[60px] truncate">{el.agentId}</span>
+            {el.text && (
+              <span className="max-w-[80px] truncate opacity-70">&quot;{el.text}&quot;</span>
+            )}
+            <span
+              onClick={(e) => { e.stopPropagation(); onRemove(el.id) }}
+              className="ml-0.5 opacity-40 hover:opacity-80 transition-opacity"
+              role="button"
+              title="Remove"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </span>
+          </button>
+        )
+      })}
+      <button
+        type="button"
+        onClick={onClearAll}
+        className="inline-flex items-center px-1.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
       >
-        <div className="flex flex-wrap gap-1.5">
-          {/* Selected elements */}
-          {selectedElements.map((el, idx) => (
-            <SortableElementChip
-              key={el.id}
-              el={el}
-              idx={idx}
-              colors={colors}
-              onRemove={() => onRemove(el.id)}
-              onInsertRef={() => onInsertRef(el.agentId)}
-              hoveredRef={hoveredRef}
-            />
-          ))}
-
-          {/* Pending elements (during continuous selection) */}
-          {pendingElements.map((el, idx) => (
-            <button
-              key={`pending-${el.agentId}`}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/20"
-              type="button"
-            >
-              <span className="font-semibold opacity-70">P{idx + 1}</span>
-              <span className="font-mono text-[10px] opacity-80 max-w-[40px] truncate">
-                {el.agentId}
-              </span>
-            </button>
-          ))}
-
-          {/* Clear all button */}
-          {(selectedElements.length > 0 || pendingElements.length > 0) && (
-            <button
-              type="button"
-              onClick={onClearAll}
-              className="inline-flex items-center px-1.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Clear all elements"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-      </SortableContext>
-    </DndContext>
+        Clear all
+      </button>
+    </div>
   )
 }

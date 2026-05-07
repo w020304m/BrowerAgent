@@ -64,8 +64,8 @@ export interface ChatState {
   selectedElements: Array<{ id: string; agentId: string; tag: string; text?: string }>
   /** Counter incremented by keyboard shortcut to trigger element selection */
   selectElementTrigger: number
-  /** Currently hovered element reference number (for highlighting) */
-  hoveredElementRef: number | null
+  /** Currently hovered element reference agentId (for highlighting) */
+  hoveredElementRef: string | null
   /** Continuous selection mode is active */
   isContinuousSelectMode: boolean
   /** Elements selected during continuous selection (not yet confirmed) */
@@ -145,7 +145,7 @@ export interface ChatState {
   /** Reorder selected elements by ID (for drag-and-drop) */
   reorderSelectedElements: (fromId: string, toId: string) => void
   /** Set hovered element reference number */
-  setHoveredElementRef: (ref: number | null) => void
+  setHoveredElementRef: (ref: string | null) => void
   /** Set continuous selection mode */
   setContinuousSelectMode: (enabled: boolean) => void
   /** Confirm continuous selection, add pending elements to selectedElements */

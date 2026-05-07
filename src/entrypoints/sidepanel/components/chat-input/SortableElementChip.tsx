@@ -28,7 +28,7 @@ export function SortableElementChip({
   }
 
   const color = colors[idx % colors.length]
-  const isHovered = hoveredRef === idx + 1
+  const isHovered = hoveredRef === el.agentId
 
   return (
     <div ref={setNodeRef} style={style} className="inline-flex">
