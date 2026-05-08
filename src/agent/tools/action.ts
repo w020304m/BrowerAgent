@@ -376,9 +376,61 @@ async function handleScroll(toolCall: ToolCall): Promise<ToolResult> {
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
     func: (dir: string | undefined, amt: number, sel: string | undefined, bottom: boolean | undefined) => {
+      // Helper: find the main scrollable container (window or overflow element)
+      function findScrollableContainer(): { element: Window | HTMLElement; canScrollDown: boolean; canScrollUp: boolean; type: string } {
+        // Check if window can scroll
+        const bodyH = document.documentElement.scrollHeight
+        const vpH = window.innerHeight
+        const scrollY = window.scrollY
+
+        if (bodyH > vpH) {
+          return {
+            element: window,
+            canScrollDown: scrollY + vpH < bodyH,
+            canScrollUp: scrollY > 0,
+            type: 'window'
+          }
+        }
+
+        // Look for common scrollable containers (overflow: auto/scroll)
+        const scrollableCandidates = document.querySelectorAll('[style*="overflow"], [class*="scroll"], [id*="scroll"], [role="scrollbar"]')
+        for (const el of scrollableCandidates) {
+          const htmlEl = el as HTMLElement
+          const style = window.getComputedStyle(htmlEl)
+          const overflow = style.overflow
+          const overflowY = style.overflowY
+
+          if (overflow === 'auto' || overflow === 'scroll' || overflowY === 'auto' || overflowY === 'scroll') {
+            const scrollHeight = htmlEl.scrollHeight
+            const clientHeight = htmlEl.clientHeight
+            if (scrollHeight > clientHeight) {
+              return {
+                element: htmlEl,
+                canScrollDown: htmlEl.scrollTop + clientHeight < scrollHeight,
+                canScrollUp: htmlEl.scrollTop > 0,
+                type: 'element:' + htmlEl.tagName.toLowerCase()
+              }
+            }
+          }
+        }
+
+        return { element: window, canScrollDown: false, canScrollUp: false, type: 'none' }
+      }
+
+      const container = findScrollableContainer()
+
       if (bottom) {
-        window.scrollTo(0, document.documentElement.scrollHeight)
-        return { success: true, scrolledTo: 'bottom' }
+        if (container.element instanceof Window) {
+          window.scrollTo(0, document.documentElement.scrollHeight)
+        } else {
+          container.element.scrollTop = container.element.scrollHeight
+        }
+        return {
+          success: true,
+          scrolledTo: 'bottom',
+          scrollType: container.type,
+          scrollY: container.element instanceof Window ? window.scrollY : container.element.scrollTop
+        }
       }
 
       if (sel) {
@@ -386,7 +438,7 @@ async function handleScroll(toolCall: ToolCall): Promise<ToolResult> {
           const el = document.querySelector(sel) as HTMLElement | null
           if (el) {
             el.scrollIntoView({ block: 'center', behavior: 'instant' })
-            return { success: true, scrolledTo: sel }
+            return { success: true, scrolledTo: sel, scrollType: 'element' }
           }
         } catch { /* invalid selector */ }
       }
@@ -400,8 +452,39 @@ async function handleScroll(toolCall: ToolCall): Promise<ToolResult> {
         case 'right': dx = amt; break
         default: dy = amt
       }
-      window.scrollBy(dx, dy)
-      return { success: true, scrollX: window.scrollX, scrollY: window.scrollY }
+
+      // Check if scroll is possible in the requested direction
+      if (dy > 0 && !container.canScrollDown) {
+        return {
+          success: true,
+          scrollX: container.element instanceof Window ? window.scrollX : 0,
+          scrollY: container.element instanceof Window ? window.scrollY : (container.element as HTMLElement).scrollTop,
+          scrollType: container.type,
+          hint: 'Already at bottom or page is not scrollable'
+        }
+      }
+      if (dy < 0 && !container.canScrollUp) {
+        return {
+          success: true,
+          scrollX: container.element instanceof Window ? window.scrollX : 0,
+          scrollY: container.element instanceof Window ? window.scrollY : (container.element as HTMLElement).scrollTop,
+          scrollType: container.type,
+          hint: 'Already at top'
+        }
+      }
+
+      if (container.element instanceof Window) {
+        window.scrollBy(dx, dy)
+      } else {
+        (container.element as HTMLElement).scrollBy({ top: dy, left: dx })
+      }
+
+      return {
+        success: true,
+        scrollX: container.element instanceof Window ? window.scrollX : (container.element as HTMLElement).scrollLeft,
+        scrollY: container.element instanceof Window ? window.scrollY : (container.element as HTMLElement).scrollTop,
+        scrollType: container.type
+      }
     },
     args: [direction ?? null, amount, scrollSelector ?? null, toBottom ?? null],
   })
